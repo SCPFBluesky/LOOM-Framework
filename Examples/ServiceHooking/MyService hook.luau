@@ -15,7 +15,7 @@ hook = hookservice("MyService", "__namecall", function(Self, ...)
 		return CallingScript == getfenv();	
 	end;
 
-	warn(getcallingscript(), "is invoking the __namecall metamethod of prediciton service", "with", getnamecallmethod(), ...)
+	warn(getcallingscript(), "is invoking the __namecall metamethod of MyService", "with", getnamecallmethod(), ...)
 	if not (checkcaller() and getnamecallmethod() == "TestFunc") then
 		return 100;
 	end;
