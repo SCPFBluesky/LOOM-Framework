@@ -13,6 +13,7 @@
 ## Features:
 Built in Networking system.
 Service wrapper.
+Tools to test security for your service.
 and more to come!
 
 # API Page:
