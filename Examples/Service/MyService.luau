@@ -19,4 +19,5 @@ return Loom:RegisterService("MyService", Main, true, "Instance", "The metatable 
 -- Script 2. MyService.luau
 -- How to use
 local Loom = require(game:GetService("ReplicatedStorage").Loom);
-print(Loom:TestFunc()) --> 1
+local MyService = Loom:GetService("MyService");
+print(MyService:TestFunc()) --> 1
