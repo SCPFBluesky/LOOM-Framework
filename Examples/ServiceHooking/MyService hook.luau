@@ -1,4 +1,6 @@
 local Loom = require(game:GetService("ReplicatedStorage").Loom);
+Loom.Init();
+
 local hookservice = Loom.hookmetamethod;
 
 local MyService = Loom:GetService("MyService");
@@ -12,13 +14,16 @@ hook = hookservice("MyService", "__namecall", function(Self, ...)
 	end;
 
 	local function checkcaller() -- just  for the aesthetics
-		return CallingScript == getfenv();	
+		return getcallingscript() == script;	
 	end;
 
 	warn(getcallingscript(), "is invoking the __namecall metamethod of MyService", "with", getnamecallmethod(), ...)
-	if not (checkcaller() and getnamecallmethod() == "TestFunc") then
+	print(checkcaller())
+	if not checkcaller() and getnamecallmethod() == "TestFunc" then
 		return 100;
 	end;
-	
+
 	return hook(Self, ...);
 end);
+
+print(Loom:GetService("MyService"):TestFunc());
