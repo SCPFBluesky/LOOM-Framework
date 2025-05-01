@@ -39,6 +39,26 @@ local Client: boolean = RunService:IsClient();
 local ServerScriptService = game:GetService("ServerScriptService");
 
 local RawMT = {};
+local Storages = {};
+
+local DataStoreService = game:GetService("DataStoreService");
+local freeze :({  }) -> {  }, isreadonly: <K, V>({ [K]: V }) -> boolean, clear: <K, V>({ [K]: V }) -> (), insert: (<V>({V}, V) -> ()) & (<V>({V}, number, V) -> ()) = table.freeze, table.isfrozen, table.clear, table.insert;
+
+local Old: <T>(T, string?) -> T = assert;
+local setmetatable = setmetatable;
+
+local assert = @checked function(Condition: any, Message: string) : ()
+	local succ, err = pcall(function()
+		return Old(Condition);
+	end);
+
+	if not (succ) then
+		warn("[LOOM [C] ] assertion failed! ", Message, "[LOOM [C] ]");
+		warn(debug.traceback("assertion failed!", 2));
+		
+		return;
+	end;
+end;
 
 --[=[
 	@within LOOM
@@ -49,9 +69,9 @@ local RawMT = {};
 	@return any? -- The requried module.
 	@yields
 ]=]
-local function GetModule(self: any, Name: string) : any?
+@checked local function GetModule(self: any, Name: string) : any?
 	assert(self, "Expected ':' not '.' calling member function GetModule");
-	
+
 	if (Client and Player and Player.PlayerScripts and Player.PlayerScripts:FindFirstChildWhichIsA("Actor")) then
 		for _,Module in Player.PlayerScripts:FindFirstChildWhichIsA("Actor"):GetDescendants() do
 			if (Module and Module:IsA("ModuleScript") and tostring(Module) == Name) then
@@ -65,15 +85,38 @@ local function GetModule(self: any, Name: string) : any?
 			end;
 		end;
 	end;
-	
+
 	for _,Module in script.Modules:GetDescendants() do
 		if (Module and Module:IsA("ModuleScript") and tostring(Module) == Name) then
 			return require(Module);
 		end;
 	end;
-	
+
 	warn("Requested module not found", Name);
 	return nil;
+end;
+
+local function GetType(self: any, Name: string)
+	return script.Types[Name]	
+end;
+
+--[=[
+	@within LOOM
+
+	Returns the raw metatable of the requested service
+	
+	@tag Tools
+	@param Service string -- The service to fetch the raw metatable	of
+	
+	:::danger
+	This method will throw an error when it is not called inside a studio playtest.
+	:::
+	
+	@return {}? -- The raw metatable of the service
+]=]
+local function getrawservice(Service: any) : {}?	
+	assert(RunService:IsStudio(), "Attempt to call a studio only function.");
+	return RawMT[Service];
 end;
 
 --[=[
@@ -90,18 +133,18 @@ end;
 	This method will error if init isn't called or service is nil.
 	:::
 ]=]
-local function GetService(self: any, Name: string) : any?
+@checked local function GetService(self: any, Name: string)
 	warn(Services);
-	
+
 	assert(self, "Expected ':' not '.' calling member function GetService")
 	assert(Name, "[G] Attempt to call GetService with a missing ServiceName " .. debug.traceback("", 2));	
 
-	
+
 	if not (Services[Name]) then
 		warn("Service not found:", Name);
 		return nil;
 	end;
-	
+
 	return Services[Name];
 end;
 
@@ -116,13 +159,13 @@ end;
 	:::
 ]=]
 local function Init() : ()
-	if (Ran) then
-		assert("[I] Services already registered please use :RegisterService if you wish to add another service [I]");
-	end;
-	
+	assert(not Ran, "[I] Services already registered please use :RegisterService if you wish to add another service [I]");
+
 	Ran = true;
-	for _,Service in script.Services:GetDescendants() do
-		require(Service);
+	for _,Service: ModuleScript in script.Services:GetDescendants() do
+		if (Service:IsA("ModuleScript")) then
+			require(Service);
+		end;
 	end;
 end;
 
@@ -131,24 +174,55 @@ end;
 
 	Hooks a LOOM Service.
 	
-	@tag Services
-	@param Name string -- The service to hook
+	@tag Tools
+	@param Service any -- The service to hook
 	@param Target string -- The metamethod to hook
 	@param New Function -- The function to re-write the metamethod with.
 	
 	:::danger
-	This method will error with missing parameters.
+	This method will throw an error when it is not called inside a studio playtest.
 	:::
+	
+	@returns any? -- The old metamethod that was replaced.
 ]=]
 --- @within LOOM
 --- @deprecated v0 -- Keep in note this function will be deprecated and replaced with something else.
-local function hookservice(Name: string, Target: string, New: any) : any
-	local Metatable = RawMT[Name];
-	local Old = Metatable[Target];
+@checked local function hookservice(Service: any, Target: string, New: any) : any
+	assert(RunService:IsStudio(), "Attempt to call a studio only function.");
 	
+	local Metatable = getrawservice(Service);
+	local Old = Metatable[Target];
+
 	rawset(Metatable, Target, New);
 	return Old;
 end;
+
+
+@checked local function CreateDataStorage(Name: string, Scope: any, Options: Instance) : ()
+	local Storage = DataStoreService:GetDataStore(Name, Scope, Options);
+	Storages[Name] = Storage;
+end;
+
+@checked local function GetDataStore(Name: string) : DataStore?
+	assert(Storages[Name], "Could not find " .. Name)
+	return Storages[Name];
+end;
+
+--[[@checked local function SaveToStorage(Name: string, ...) : string?
+	local Storage = GetDataStore(Name);	
+	local Args = {...};
+	
+	local succ, err = pcall(function()
+		Storage:SetAsync(unpack(Args));
+	end);
+	
+	if not succ then
+		error("Failed to save " .. Name .. " becuase " .. err, 2);
+		return nil;
+	end;
+	
+	return "Saved";
+end;]]
 
 --[=[
 	@within LOOM
@@ -169,31 +243,31 @@ end;
 	ReadOnly parameter will ONLY work in live roblox games, not studio.
 	:::
 ]=]
-local function CreateService(self, Name: string, Closure: {}, ReadOnly: boolean?, Type: string?, LockMessage: string) : any?
-	export type Closure = typeof(Closure);
+@checked local function CreateService(self, Name: string, Closure: {}, ReadOnly: boolean?, Type: string?, LockMessage: string) : any?
+	--export type Closure = typeof(Closure);
 	assert(self, "Expected ':' not '.' calling member function RegisterService");
-	
+
 	assert(Name, "[R] Attempt to call RegisterService with missing name [R]");
 	assert(Closure, "[R] Attempt to call RegisterService with a missing operand [R]");
-	
+
 	local Proxy = newproxy(true);
 	local ProxyMT = getmetatable(Proxy);
-	
-	if not (table.isfrozen(Closure)) then
-		table.freeze(Closure);
+
+	if not (isreadonly(Closure)) then
+		freeze(Closure);
 	end;
-	
+
 	local CustomMethods = false;
 	if (Closure["__namecall"] or Closure["__index"] or Closure["__newindex"]) then
 		CustomMethods = true;
 	end;
 
-	ProxyMT.__index = function(Self: any, Index: any)
+	ProxyMT.__index = @checked function(Self: any, Index: any)
 		if Closure["__index"] and CustomMethods then
 			Closure["__index"](Self, Index);
 			return;
 		end;
-		
+
 		if Index == "Parent" then
 			return game;
 		end;
@@ -202,12 +276,12 @@ local function CreateService(self, Name: string, Closure: {}, ReadOnly: boolean?
 		return Closure[Index];
 	end;
 
-	ProxyMT.__newindex = function(Self: any , Index: any, Value: any) : ()
+	ProxyMT.__newindex = @checked function(Self: any , Index: any, Value: any) : ()
 		if Closure["__newindex"] and CustomMethods then
 			Closure["__newindex"](Self, Index, Value);
 			return;
 		end;
-		
+
 		if ReadOnly then
 			error("Read Only", 2);
 		else
@@ -215,45 +289,50 @@ local function CreateService(self, Name: string, Closure: {}, ReadOnly: boolean?
 		end;
 	end;
 
-	ProxyMT.__namecall = function(Self: any, ...) : ()
+	ProxyMT.__namecall = @checked function(Self: any, ...) : ()
 		if Closure["__namecall"] and CustomMethods then
 			Closure["__namecall"](Self, ...);
 			return;
 		end;
-		
-		local Method = getnamecallmethod();
+
+		local Method: string = getnamecallmethod();
 		if not Closure[Method] then
 			error(Method .. " is not a valid member of " ..Name, 2);
 		end;
 		return Closure[Method](...);
 	end;
 
-	ProxyMT.__call = function(...) : never
+	ProxyMT.__call = @checked function(...) : never
 		error("attempt to call a Instance value", 2);
 	end;
 
 	ProxyMT.__type = Type or "Instance";
-	RawMT[Name] = ProxyMT;
-	
+	ProxyMT.__metatable = LockMessage or "Loom Service";	
+
+	RawMT[Proxy] = ProxyMT;
 	if (ReadOnly) then
 		if RunService:IsStudio() then
 			warn("[R] Service metatable table will only become readonly in live seasions this is for the penteration tools [R]")
 		else
-			ProxyMT.__metatable = LockMessage or "Loom Service";	
-			table.freeze(ProxyMT);
-			table.clear(RawMT);
+			freeze(ProxyMT);
+			clear(RawMT);
+			
+			freeze(RawMT);
 		end;
 	end;
-	
+
 	Services[Name] = Proxy;
 	if Closure["__registered"] then
 		Closure["__registered"](Proxy);
 	end;
+	
 	return Proxy;
 end;
 
 
-
+@checked local function Shared(Name: string) : Object? | Instance? | any?
+	return script.Assets[Name];
+end;
 
 Framework.RegisterService = CreateService;
 Framework.GetService = GetService;
@@ -264,13 +343,17 @@ Framework.GetModule = GetModule;
 Framework.getnamecallmethod = getnamecallmethod;
 Framework.hookmetamethod = hookservice;
 
+Framework.GetType = GetType;
+Framework.Shared = Shared;
 
-export type Self = typeof(Framework);
+Framework.getrawservice = getrawservice;
+--export type Self = typeof(Framework);
+
 return setmetatable(Framework, {
-	__index = function(Self: Self, Index: string) : any?
+	__index = @checked function(Self: {any}, Index: any) : any?
 		return Services[Index] or rawget(Self, Index);
 	end,
-	__newindex = function(Self: Self, Index: any, Value: any) : never
+	__newindex = @checked function(Self: {any}, Index: any, Value: any) : never
 		error("Read Only", 2);
 	end,
 	__metatable = "LOOM";	
